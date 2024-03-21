@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Flower SDK Linear TV Example</title>
+    <script src="https://sdk.anypoint.tv/html5/flower-sdk-1.2.2.js"></script>
+    <script src="https://cdn.bitmovin.com/player/web/8/bitmovinplayer.js" type="text/javascript"></script>
+    <style>
+      #video-container {
+        position: relative;
+        display: inline-block;
+      }
+
+      #bitmovin-container {
+        width: 1280px;
+        height: 720px;
+      }
+
+      #ad-container {
+        display: none;
+        position: absolute;
+        top: 0px;
+        right: 0px;
+        bottom: 0px;
+        left: 0px;
+      }
+
+      #ad-information {
+        display: none;
+        position: absolute;
+        right: 5px;
+        bottom: 5px;
+        background-color: white;
+        font-size: 2em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="video-container">
+      <div id="bitmovin-container">
+        <video></video>
+      </div>
+      <div id="ad-container"></div>
+      <div id="ad-information"></div>
+    </div>
+    <footer>
+      <button onclick="playLinearTv()">play</button>
+      <div id="_console"></div>
+    </footer>
+    <script>
+      function prepareTestLogging(player) {
+        const _console = document.getElementById('_console');
+        _console.log = function (text) {
+          const span = document.createElement('span');
+          span.innerHTML = text;
+          span.appendChild(document.createElement('br'));
+          _console.insertBefore(span, _console.firstChild);
+          Array.from(_console.children).slice(20).forEach(function (child) {
+            _console.removeChild(child);
+          });
+        };
+
+        let activeFrag;
+        player.on(bitmovin.player.PlayerEvent.SegmentPlayback, data => {
+          if (!data.mimeType.startsWith('video')) {
+            return;
+          }
+
+          if (!activeFrag || activeFrag.url !== data.url) {
+            _console.log(data.url);
+          }
+
+          activeFrag = data;
+        });
+
+        // Event listener for Bitmovin player error event
+        player.on(bitmovin.player.PlayerEvent.Error, event => {
+          console.error('Bitmovin Error: ' + event.code + ' - ' + event.name, event.data);
+        });
+      }
+
+      const movies = [
+        {
+          title: 'Your Linear TV Stream',
+          url: 'https://XXX',
+          streamType: 'hls',
+          vod: false,
+        },
+        {
+          title: 'Your VOD Stream',
+          url: 'https://XXX',
+          streamType: 'hls',
+          vod: true,
+          duration: 0,
+        },
+      ];
+
+      // Your Bitmovin API key
+      const BITMOVIN_API_KEY = '';
+
+      let player;
+      let isContentEnd = false;
+
+      // TODO GUIDE: initialize SDK
+      // env must be one of local, dev, prod
+      FlowerSdk.setEnv('local');
+      FlowerSdk.init();
+      // Log level must be one of Verbose, Debug, Info, Warn, Error, Off
+      FlowerSdk.setLogLevel('Verbose');
+
+      const movie = movies[0];
+
+      // Additional parameters to pass to the ad system
+      const extraParams = new Map();
+      extraParams.set('contentId', 1);
+
+      // TODO GUIDE: create FlowerAdView instance
+      const flowerAdView = new FlowerAdView(document.getElementById('ad-container'));
+
+      function playLinearTv() {
+        // Creating the Bitmovin player instance
+        player = new bitmovin.player.Player(
+          document.querySelector('#bitmovin-container'),
+          {
+            key: BITMOVIN_API_KEY,
+            buffer: {
+              [bitmovin.player.MediaType.Video]: {
+                [bitmovin.player.BufferType.ForwardDuration]: 10,
+              },
+            },
+          },
+        );
+
+        player.setVideoElement(document.querySelector('video'));
+        player.on(bitmovin.player.PlayerEvent.PlaybackFinished, () => {
+          isContentEnd = true;
+          // TODO GUIDE: notify end of vod content
+          flowerAdView.adsManager.notifyContentEnded();
+        });
+
+        prepareTestLogging(player);
+
+        // TODO GUIDE: implement & add FlowerAdsManagerListener
+        const adsManagerListener = {
+          onPrepare(adDurationMs) {
+            if (movie.vod) {
+              if (player.isPlaying()) {
+                // OPTIONAL GUIDE: additional actions before ad playback
+                const adInformation = document.getElementById('ad-information');
+                adInformation.innerHTML = 'Ads will start in a moment';
+                adInformation.style.display = 'block';
+                document.querySelector('#video-container').appendChild(adInformation);
+
+                setTimeout(() => {
+                  // TODO GUIDE: play midroll ad
+                  adInformation.style.display = 'none';
+                  flowerAdView.adsManager.play();
+                }, 5000);
+              } else {
+                // TODO GUIDE: play preroll ad
+                flowerAdView.adsManager.play();
+              }
+            } else {
+              // TODO GUIDE: need nothing for linear tv
+            }
+          },
+          onPlay() {
+            if (movie.vod) {
+              // TODO GUIDE: pause VOD content
+              player.pause();
+            } else {
+              // OPTIONAL GUIDE: enable additional actions for ad playback
+              const adInformation = document.getElementById('ad-information');
+              adInformation.innerHTML = 'Currently playing ad';
+              adInformation.style.display = 'block';
+            }
+          },
+          onCompleted() {
+            if (movie.vod) {
+              // TODO GUIDE: resume VOD content after ad complete
+              if (isContentEnd) {
+                return;
+              }
+
+              player.play();
+            } else {
+              // OPTIONAL GUIDE: disable additional actions after ad complete
+              const adInformation = document.getElementById('ad-information');
+              adInformation.style.display = 'none';
+            }
+          },
+          onError(error) {
+            console.error('Error from Flower SDK: ', error);
+            if (movie.vod) {
+              // TODO GUIDE: resume VOD content on ad error
+              if (isContentEnd) {
+                return;
+              }
+
+              player.play();
+            } else {
+              // TODO GUIDE: restart to play Linear TV on ad error
+              flowerAdView.adsManager.removeListener(adsManagerListener);
+              flowerAdView.adsManager.stop();
+              player.destroy().then(function () {
+                playLinearTv();
+              });
+            }
+          },
+        };
+        flowerAdView.adsManager.addListener(adsManagerListener);
+
+        // TODO GUIDE: implement MediaPlayerHook
+        const mediaPlayerHook = {
+          getPlayer() {
+            return player;
+          },
+        };
+
+        if (movie.vod) {
+          // TODO GUIDE: request vod ad
+          flowerAdView.adsManager.requestVodAd(
+            'https://ad_request',
+            '1',
+            movie.duration,
+            null,
+            mediaPlayerHook,
+          );
+
+          player.load({ [movie.streamType]: movie.url });
+        } else {
+          // TODO GUIDE: change original LinearTV stream url by adView.adsManager.changeChannelUrl
+          // arg0: videoUrl, original LinearTV stream url
+          // arg1: adTagUrl, url from flower system
+          // arg2: channelId, unique channel id in your service
+          // arg3: extraParams, values you can provide for targeting
+          // arg4: mediaPlayerHook, interface that provides currently playing segment information for ad tracking
+          const changedChannelUrl = flowerAdView.adsManager.changeChannelUrl(
+            movie.url,
+            'https://ad_request',
+            '1',
+            null,
+            mediaPlayerHook,
+          );
+
+          // Loading the stream with the Bitmovin player
+          player.on(bitmovin.player.PlayerEvent.SourceLoaded, () => player.play());
+          player.load({ [movie.streamType]: changedChannelUrl });
+        }
+      }
+    </script>
+  </body>
+</html>
