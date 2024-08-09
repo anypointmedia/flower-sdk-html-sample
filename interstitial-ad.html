@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Flower SDK Interstitial AD Example</title>
+    <script src="https://sdk.anypoint.tv/html5/flower-sdk-1.2.10.js"></script>
+    <style>
+      #content-container {
+        position: relative;
+        width: 1280px;
+        height: 720px;
+        border: 1px solid black;
+      }
+
+      #content {
+        /*position: absolute;*/
+        /*top: 0px;*/
+        /*right: 0px;*/
+        /*bottom: 0px;*/
+        /*left: 0px;*/
+
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #ad-container {
+        display: none;
+        position: absolute;
+        top: 0px;
+        right: 0px;
+        bottom: 0px;
+        left: 0px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="content-container">
+      <div id="content">
+        <h2>Content Below Ad</h2>
+      </div>
+      <div id="ad-container"></div>
+    </div>
+    <script>
+      // TODO GUIDE: initialize SDK
+      // env must be one of local, dev, prod
+      FlowerSdk.setEnv('local');
+      FlowerSdk.init();
+      // Log level must be one of Verbose, Debug, Info, Warn, Error, Off
+      FlowerSdk.setLogLevel('Verbose');
+
+      // TODO GUIDE: create FlowerAdView instance
+      const flowerAdView = new FlowerAdView(document.getElementById('ad-container'));
+
+      function startAd() {
+        // TODO GUIDE: implement & add FlowerAdsManagerListener
+        const adsManagerListener = {
+          onPrepare(adDurationMs) {
+            // TODO GUIDE: play ad
+            flowerAdView.adsManager.play();
+          },
+          onPlay() {
+            // TODO GUIDE: need nothing for interstitial ad
+          },
+          onCompleted() {
+            // TODO GUIDE: stop FlowerAdsManager
+            flowerAdView.adsManager.removeListener(adsManagerListener);
+            flowerAdView.adsManager.stop();
+          },
+          onError(error) {
+            console.error('Error from Flower SDK: ', error);
+
+            // TODO GUIDE: stop FlowerAdsManager
+            flowerAdView.adsManager.removeListener(adsManagerListener);
+            flowerAdView.adsManager.stop();
+          },
+          onAdSkipped(reason) {
+            console.log('onAdSkipped: ', reason);
+          },
+        };
+        flowerAdView.adsManager.addListener(adsManagerListener);
+
+        // TODO GUIDE: request ad
+        // arg0: adTagUrl, url from flower system
+        //       You must file a request to Anypoint Media to receive a adTagUrl.
+        // arg1: extraParams, values you can provide for targeting
+        // arg2: adTagHeaders, (Optional) values included in headers for ad request
+        flowerAdView.adsManager.requestAd(
+          'https://ad_request',
+          new Map(),
+          new Map(),
+        );
+      }
+
+      startAd();
+    </script>
+  </body>
+</html>

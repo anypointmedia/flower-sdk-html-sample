@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>Flower SDK Linear TV Example</title>
-    <script src="https://sdk.anypoint.tv/html5/flower-sdk-1.2.2.js"></script>
+    <script src="https://sdk.anypoint.tv/html5/flower-sdk-1.2.10.js"></script>
     <script src="https://cdn.bitmovin.com/player/web/8/bitmovinplayer.js" type="text/javascript"></script>
     <style>
       #video-container {
@@ -75,6 +75,9 @@
         });
 
         // Event listener for Bitmovin player error event
+        player.on(bitmovin.player.PlayerEvent.Warning, event => {
+          console.warn('Bitmovin Warning: ' + event.code + ' - ' + event.name, event.data);
+        });
         player.on(bitmovin.player.PlayerEvent.Error, event => {
           console.error('Bitmovin Error: ' + event.code + ' - ' + event.name, event.data);
         });
@@ -100,7 +103,8 @@
       const BITMOVIN_API_KEY = '';
 
       let player;
-      let isContentEnd = false;
+      let isContentLoad = false; // For VOD
+      let isContentEnd = false; // For VOD
 
       // TODO GUIDE: initialize SDK
       // env must be one of local, dev, prod
@@ -111,10 +115,6 @@
 
       const movie = movies[0];
 
-      // Additional parameters to pass to the ad system
-      const extraParams = new Map();
-      extraParams.set('contentId', 1);
-
       // TODO GUIDE: create FlowerAdView instance
       const flowerAdView = new FlowerAdView(document.getElementById('ad-container'));
 
@@ -124,15 +124,32 @@
           document.querySelector('#bitmovin-container'),
           {
             key: BITMOVIN_API_KEY,
-            buffer: {
-              [bitmovin.player.MediaType.Video]: {
-                [bitmovin.player.BufferType.ForwardDuration]: 10,
-              },
-            },
           },
         );
 
+        Object.values(bitmovin.player.PlayerEvent).forEach(eventType => {
+          player.on(eventType, event => {
+            const message = `Bitmovin Player ${eventType}: ${JSON.stringify(event)}`;
+
+            switch (eventType) {
+              case bitmovin.player.PlayerEvent.Paused:
+                console.warn(message);
+                break;
+              case bitmovin.player.PlayerEvent.Warning:
+                console.warn(message);
+                break;
+              case bitmovin.player.PlayerEvent.Error:
+                console.error(message);
+                break;
+              default:
+                console.debug(message);
+                break;
+            }
+          });
+        });
+
         player.setVideoElement(document.querySelector('video'));
+        player.on(bitmovin.player.PlayerEvent.Ready, () => isContentLoad = true);
         player.on(bitmovin.player.PlayerEvent.PlaybackFinished, () => {
           isContentEnd = true;
           // TODO GUIDE: notify end of vod content
@@ -183,7 +200,11 @@
                 return;
               }
 
-              player.play();
+              if (isContentLoad) {
+                player.play();
+              } else {
+                player.on(bitmovin.player.PlayerEvent.Ready, () => player.play());
+              }
             } else {
               // OPTIONAL GUIDE: disable additional actions after ad complete
               const adInformation = document.getElementById('ad-information');
@@ -203,10 +224,22 @@
               // TODO GUIDE: restart to play Linear TV on ad error
               flowerAdView.adsManager.removeListener(adsManagerListener);
               flowerAdView.adsManager.stop();
-              player.destroy().then(function () {
+              try {
+                player.destroy().then(function () {
+                  playLinearTv();
+                })
+                  .catch(function (error) {
+                    console.error('Error while destroying player', error);
+                    playLinearTv();
+                  });
+              } catch (error) {
+                console.error('Error while destroying player', error);
                 playLinearTv();
-              });
+              }
             }
+          },
+          onAdSkipped(reason) {
+            console.log('onAdSkipped: ', reason);
           },
         };
         flowerAdView.adsManager.addListener(adsManagerListener);
@@ -220,12 +253,20 @@
 
         if (movie.vod) {
           // TODO GUIDE: request vod ad
+          // arg0: adTagUrl, url from flower system.
+          //       You must file a request to Anypoint Media to receive a adTagUrl.
+          // arg1: contentId, unique content id in your service
+          // arg2: durationMs, duration of vod content in milliseconds
+          // arg3: extraParams, values you can provide for targeting
+          // arg4: mediaPlayerHook, interface that provides currently playing segment information for ad tracking
+          // arg5: adTagHeaders, (Optional) values included in headers for ad request
           flowerAdView.adsManager.requestVodAd(
             'https://ad_request',
             '1',
             movie.duration,
-            null,
+            new Map(),
             mediaPlayerHook,
+            new Map(),
           );
 
           player.load({ [movie.streamType]: movie.url });
@@ -233,16 +274,26 @@
           // TODO GUIDE: change original LinearTV stream url by adView.adsManager.changeChannelUrl
           // arg0: videoUrl, original LinearTV stream url
           // arg1: adTagUrl, url from flower system
+          //       You must file a request to Anypoint Media to receive a adTagUrl.
           // arg2: channelId, unique channel id in your service
           // arg3: extraParams, values you can provide for targeting
           // arg4: mediaPlayerHook, interface that provides currently playing segment information for ad tracking
+          // arg5: adTagHeaders, (Optional) values included in headers for ad request
+          // arg6: channelStreamHeaders, (Optional) values included in headers for channel stream request
           const changedChannelUrl = flowerAdView.adsManager.changeChannelUrl(
             movie.url,
             'https://ad_request',
             '1',
-            null,
+            new Map(),
             mediaPlayerHook,
+            new Map(),
+            new Map(),
           );
+
+          // OPTIONAL GUIDE: change extraParams during stream playback
+          player.on(bitmovin.player.PlayerEvent.TimeChanged, (event) => {
+            flowerAdView.adsManager.changeChannelExtraParams(new Map([ [ 'myTargetingKey', String(event.time) ] ]));
+          });
 
           // Loading the stream with the Bitmovin player
           player.on(bitmovin.player.PlayerEvent.SourceLoaded, () => player.play());

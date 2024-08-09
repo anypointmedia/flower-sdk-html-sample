@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>Flower SDK Linear TV Example</title>
-    <script src="https://sdk.anypoint.tv/html5/flower-sdk-1.2.2.js"></script>
+    <script src="https://sdk.anypoint.tv/html5/flower-sdk-1.2.10.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
     <style>
       #video-container {
@@ -101,10 +101,6 @@
 
       const movie = movies[0];
 
-      // Additional parameters to pass to the ad system
-      const extraParams = new Map();
-      extraParams.set('contentId', 1);
-
       // TODO GUIDE: create FlowerAdView instance
       const flowerAdView = new FlowerAdView(document.getElementById('ad-container'));
 
@@ -194,6 +190,9 @@
               playLinearTv();
             }
           },
+          onAdSkipped(reason) {
+            console.log('onAdSkipped: ', reason);
+          },
         };
         flowerAdView.adsManager.addListener(adsManagerListener);
 
@@ -206,12 +205,20 @@
 
         if (movie.vod) {
           // TODO GUIDE: request vod ad
+          // arg0: adTagUrl, url from flower system.
+          //       You must file a request to Anypoint Media to receive a adTagUrl.
+          // arg1: contentId, unique content id in your service
+          // arg2: durationMs, duration of vod content in milliseconds
+          // arg3: extraParams, values you can provide for targeting
+          // arg4: mediaPlayerHook, interface that provides currently playing segment information for ad tracking
+          // arg5: adTagHeaders, (Optional) values included in headers for ad request
           flowerAdView.adsManager.requestVodAd(
             'https://ad_request',
             '1',
             movie.duration,
-            null,
+            new Map(),
             mediaPlayerHook,
+            new Map(),
           );
 
           player.loadSource(movie.url);
@@ -219,16 +226,26 @@
           // TODO GUIDE: change original LinearTV stream url by adView.adsManager.changeChannelUrl
           // arg0: videoUrl, original LinearTV stream url
           // arg1: adTagUrl, url from flower system
+          //       You must file a request to Anypoint Media to receive a adTagUrl.
           // arg2: channelId, unique channel id in your service
           // arg3: extraParams, values you can provide for targeting
           // arg4: mediaPlayerHook, interface that provides currently playing segment information for ad tracking
+          // arg5: adTagHeaders, (Optional) values included in headers for ad request
+          // arg6: channelStreamHeaders, (Optional) values included in headers for channel stream request
           const changedChannelUrl = flowerAdView.adsManager.changeChannelUrl(
             movie.url,
             'https://ad_request',
             '1',
-            null,
+            new Map(),
             mediaPlayerHook,
+            new Map(),
+            new Map(),
           );
+
+          // OPTIONAL GUIDE: change extraParams during stream playback
+          player.on(Hls.Events.FRAG_CHANGED, function (event, data) {
+            flowerAdView.adsManager.changeChannelExtraParams(new Map([ [ 'myTargetingKey', String(data.frag.programDateTime) ] ]));
+          });
 
           player.loadSource(changedChannelUrl);
           player.media.play();
